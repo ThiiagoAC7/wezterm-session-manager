@@ -256,7 +256,6 @@ end
 -- Displays an interactive selector with all available saved workspaces
 -- @param window: The current window object
 function session_manager.load_state(window)
-	-- Get list of all saved workspaces
 	local saved_workspaces = session_manager.get_saved_workspaces()
 
 	if #saved_workspaces == 0 then
@@ -265,10 +264,16 @@ function session_manager.load_state(window)
 	end
 
 	local choices = {}
-	for _, workspace_name in ipairs(saved_workspaces) do
+	for i, workspace_name in ipairs(saved_workspaces) do
 		table.insert(choices, {
 			id = workspace_name,
-			label = workspace_name,
+			label = wezterm.format({
+				{ Foreground = { AnsiColor = "White" } }, -- icon color
+				-- workspace icon (any nerd font works: https://www.nerdfonts.com/cheat-sheet)
+				{ Text = string.format("%d.  󰻃 ", i) },
+				{ Foreground = { AnsiColor = "White" } }, -- text color
+				{ Text = workspace_name },
+			}),
 		})
 	end
 
@@ -278,13 +283,21 @@ function session_manager.load_state(window)
 			title = "Load Workspace",
 			choices = choices,
 			fuzzy = true,
-			fuzzy_description = "Select a workspace to switch to:",
+			fuzzy_description = "Select a workspace to switch to (fuzzy):",
 			action = wezterm.action_callback(function(inner_window, inner_pane, id, label)
-				if not label then
+				if not id and not label then
+					wezterm.log_info("cancelled")
 					return -- cancelled selection
 				end
 
-				inner_window:perform_action(wezterm.action.SwitchToWorkspace({ name = label }), inner_pane)
+				label = label:match("%s*(%S+)%s*$"):gsub("%s+", "") -- match last word in string
+
+				wezterm.log_info("id = " .. id)
+				wezterm.log_info("label = " .. label)
+
+				inner_window:perform_action(wezterm.action.SwitchToWorkspace({ name = id }), inner_pane)
+
+				-- TODO: make it work
 				-- session_manager.restore_state(inner_window)
 			end),
 		}),
