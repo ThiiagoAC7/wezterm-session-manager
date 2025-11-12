@@ -1,6 +1,6 @@
 local wezterm = require("wezterm")
 local session_manager = {}
-local os = wezterm.target_triple
+local target_os = wezterm.target_triple
 
 --- Displays a notification in WezTerm.
 -- @param message string: The notification message to be displayed.
@@ -9,43 +9,41 @@ local function display_notification(message)
 	-- Additional code to display a GUI notification can be added here if needed
 end
 
---- Initializes all saved workspaces at startup
--- Scans the session directory for saved workspace files and creates a window for each
+--- Returns a list of all saved workspace names
+-- @return table: Array of workspace names found in the workspaces directory
+function session_manager.get_saved_workspaces()
+	local workspaces = {}
+	local session_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+
+	-- create directory if it doesnt exist
+	os.execute('mkdir -p "' .. session_dir .. '"')
+
+	local handle = io.popen('cd "' .. session_dir .. '" && ls wezterm_state_*.json 2>/dev/null')
+
+	if handle then
+		for file in handle:lines() do
+			-- Extract workspace name from filename: wezterm_state_NAME.json
+			local name = file:match("^wezterm_state_(.+)%.json$")
+			if name then
+				table.insert(workspaces, name)
+			end
+		end
+		handle:close()
+	end
+
+	return workspaces
+end
+
+--- Initializes a default workspace at startup
 function session_manager.initialize_workspaces()
 	local mux = wezterm.mux
 
-	local function get_saved_workspaces()
-		local workspaces = {}
-		local session_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/"
+	local _, _, window = mux.spawn_window({
+		workspace = "default",
+		cwd = wezterm.home_dir,
+	})
 
-		local handle = io.popen('cd "' .. session_dir .. '" && ls wezterm_state_*.json 2>/dev/null')
-		if handle then
-			for file in handle:lines() do
-				-- Extract workspace name from filename: wezterm_state_NAME.json
-				local name = file:match("^wezterm_state_(.+)%.json$")
-				if name then
-					table.insert(workspaces, name)
-				end
-			end
-			handle:close()
-		end
-
-		return workspaces
-	end
-
-	local saved_workspaces = get_saved_workspaces()
-	local default_workspace = nil
-
-	for _, workspace_name in ipairs(saved_workspaces) do
-		local _, pane, window = mux.spawn_window({
-			workspace = workspace_name,
-			cwd = wezterm.home_dir,
-		})
-	end
-
-	if default_workspace then
-		mux.set_active_workspace("default")
-	end
+	mux.set_active_workspace("default")
 end
 
 --- Retrieves the current workspace data from the active window.
@@ -114,10 +112,10 @@ end
 -- @param workspace_data table: The data structure containing the saved workspace state.
 local function recreate_workspace(window, workspace_data)
 	local function extract_path_from_dir(working_directory)
-		if os == "x86_64-pc-windows-msvc" then
+		if target_os == "x86_64-pc-windows-msvc" then
 			-- On Windows, transform 'file:///C:/path/to/dir' to 'C:/path/to/dir'
 			return working_directory:gsub("file:///", "")
-		elseif os == "x86_64-unknown-linux-gnu" then
+		elseif target_os == "x86_64-unknown-linux-gnu" then
 			-- On Linux, transform 'file://{computer-name}/home/{user}/path/to/dir' to '/home/{user}/path/to/dir'
 			return working_directory:gsub("^.*(/home/)", "/home/")
 		else
@@ -227,7 +225,7 @@ end
 function session_manager.restore_state(window)
 	local workspace_name = window:active_workspace()
 	local file_path = wezterm.home_dir
-		.. "/.config/wezterm/wezterm-session-manager/wezterm_state_"
+		.. "/.config/wezterm/wezterm-session-manager/workspaces/wezterm_state_"
 		.. workspace_name
 		.. ".json"
 
@@ -255,12 +253,43 @@ function session_manager.restore_state(window)
 end
 
 --- Allows to select which workspace to load
+-- Displays an interactive selector with all available saved workspaces
+-- @param window: The current window object
 function session_manager.load_state(window)
-	-- TODO: Implement
-	-- Placeholder for user selection logic
-	-- ...
-	-- TODO: Call the function recreate_workspace(workspace_data) to recreate the workspace
-	-- Placeholder for recreation logic...
+	-- Get list of all saved workspaces
+	local saved_workspaces = session_manager.get_saved_workspaces()
+
+	if #saved_workspaces == 0 then
+		window:toast_notification("WezTerm Session Manager", "No saved workspaces found", nil, 3000)
+		return
+	end
+
+	local choices = {}
+	for _, workspace_name in ipairs(saved_workspaces) do
+		table.insert(choices, {
+			id = workspace_name,
+			label = workspace_name,
+		})
+	end
+
+	-- interactive workspace selector
+	window:perform_action(
+		wezterm.action.InputSelector({
+			title = "Load Workspace",
+			choices = choices,
+			fuzzy = true,
+			fuzzy_description = "Select a workspace to switch to:",
+			action = wezterm.action_callback(function(inner_window, inner_pane, id, label)
+				if not label then
+					return -- cancelled selection
+				end
+
+				inner_window:perform_action(wezterm.action.SwitchToWorkspace({ name = label }), inner_pane)
+				-- session_manager.restore_state(inner_window)
+			end),
+		}),
+		window:active_pane()
+	)
 end
 
 --- Orchestrator function to save the current workspace state.
@@ -268,10 +297,10 @@ end
 function session_manager.save_state(window)
 	local data = retrieve_workspace_data(window)
 
-	local file_path = wezterm.home_dir
-		.. "/.config/wezterm/wezterm-session-manager/wezterm_state_"
-		.. data.name
-		.. ".json"
+	local workspace_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+	-- create the workspaces directory if it doesnt exist
+	target_os.execute('mkdir -p "' .. workspace_dir .. '"')
+	local file_path = workspace_dir .. "wezterm_state_" .. data.name .. ".json"
 
 	if save_to_json_file(data, file_path) then
 		window:toast_notification("WezTerm Session Manager", "Workspace state saved successfully", nil, 4000)
