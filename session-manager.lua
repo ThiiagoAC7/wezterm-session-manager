@@ -312,7 +312,7 @@ function session_manager.save_state(window)
 
 	local workspace_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
 	-- create the workspaces directory if it doesnt exist
-	target_os.execute('mkdir -p "' .. workspace_dir .. '"')
+	os.execute('mkdir -p "' .. workspace_dir .. '"')
 	local file_path = workspace_dir .. "wezterm_state_" .. data.name .. ".json"
 
 	if save_to_json_file(data, file_path) then
@@ -320,6 +320,12 @@ function session_manager.save_state(window)
 	else
 		window:toast_notification("WezTerm Session Manager", "Failed to save workspace state", nil, 4000)
 	end
+end
+
+function session_manager.delete_state()
+	-- TODO:
+	-- open list of current saved workspaces and pick one to delete
+	-- add param to as if user is sure
 end
 
 return session_manager
