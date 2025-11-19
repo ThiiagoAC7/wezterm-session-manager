@@ -322,6 +322,79 @@ function session_manager.save_state(window)
 	end
 end
 
+--- Renames the current workspace state
+function session_manager.rename_state(window)
+	local old_name = window:active_workspace()
+	local workspace_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+	local old_path = workspace_dir .. "wezterm_state_" .. old_name .. ".json"
+
+	-- Check if the state file for the current workspace exists
+	local file = io.open(old_path, "r")
+	if not file then
+		window:toast_notification(
+			"WezTerm Session Manager",
+			"No saved state for current workspace '" .. old_name .. "'.",
+			nil,
+			4000
+		)
+		return
+	end
+	file:close()
+
+	-- Prompt for new name
+	window:perform_action(
+		wezterm.action.PromptInputLine({
+			description = "Enter new name for workspace '" .. old_name .. "':",
+			action = wezterm.action_callback(function(win, pane, new_name)
+				if not new_name or new_name == "" then
+					win:toast_notification("WezTerm Session Manager", "Rename cancelled.", nil, 3000)
+					return
+				end
+
+				if new_name == old_name then
+					return
+				end
+
+				local new_path = workspace_dir .. "wezterm_state_" .. new_name .. ".json"
+
+				-- check if a workspace with the new name already exists
+				local existing_file = io.open(new_path, "r")
+				if existing_file then
+					existing_file:close()
+					win:toast_notification(
+						"WezTerm Session Manager",
+						"A workspace named '" .. new_name .. "' already exists.",
+						nil,
+						4000
+					)
+					return
+				end
+
+				-- rename the file
+				local success, err = os.rename(old_path, new_path)
+				if success then
+					win:toast_notification(
+						"WezTerm Session Manager",
+						"Workspace '" .. old_name .. "' renamed to '" .. new_name .. "'.",
+						nil,
+						4000
+					)
+					-- Switch to a workspace with the new name for better UX
+					win:perform_action(wezterm.action.SwitchToWorkspace({ name = new_name }), pane)
+				else
+					win:toast_notification(
+						"WezTerm Session Manager",
+						"Error renaming workspace: " .. tostring(err),
+						nil,
+						4000
+					)
+				end
+			end),
+		}),
+		window:active_pane()
+	)
+end
+
 function session_manager.delete_state()
 	-- TODO:
 	-- open list of current saved workspaces and pick one to delete
