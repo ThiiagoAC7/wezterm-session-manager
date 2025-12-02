@@ -252,18 +252,45 @@ function session_manager.restore_state(window)
 	end
 end
 
+local function _show_create_new_workspace_prompt(window, pane)
+	window:perform_action(
+		wezterm.action.PromptInputLine({
+			description = wezterm.format({
+				{ Attribute = { Intensity = "Bold" } },
+				{ Foreground = { AnsiColor = "Purple" } },
+				{ Text = "Enter name for new workspace:" },
+			}),
+			action = wezterm.action_callback(function(win, pne, line)
+				if line and line ~= "" then
+					win:perform_action(
+						wezterm.action.SwitchToWorkspace({
+							name = line,
+						}),
+						pne
+					)
+				end
+			end),
+		}),
+		pane
+	)
+end
+
 --- Allows to select which workspace to load
 -- Displays an interactive selector with all available saved workspaces
 -- @param window: The current window object
 function session_manager.load_state(window)
 	local saved_workspaces = session_manager.get_saved_workspaces()
-
-	if #saved_workspaces == 0 then
-		window:toast_notification("WezTerm Session Manager", "No saved workspaces found", nil, 3000)
-		return
-	end
-
 	local choices = {}
+
+	table.insert(choices, {
+		id = "CREATE_NEW_WORKSPACE",
+		label = wezterm.format({
+			{ Attribute = { Intensity = "Bold" } },
+			{ Foreground = { AnsiColor = "Green" } },
+			{ Text = "+ Create New Workspace" },
+		}),
+	})
+
 	for i, workspace_name in ipairs(saved_workspaces) do
 		table.insert(choices, {
 			id = workspace_name,
@@ -290,15 +317,20 @@ function session_manager.load_state(window)
 					return -- cancelled selection
 				end
 
-				label = label:match("%s*(%S+)%s*$"):gsub("%s+", "") -- match last word in string
+				if id == "CREATE_NEW_WORKSPACE" then
+					_show_create_new_workspace_prompt(inner_window, inner_pane)
+					return
+				end
 
-				wezterm.log_info("id = " .. id)
-				wezterm.log_info("label = " .. label)
-
-				inner_window:perform_action(wezterm.action.SwitchToWorkspace({ name = id }), inner_pane)
-
-				-- TODO: make it work
-				-- session_manager.restore_state(inner_window)
+				if id then
+					inner_window:perform_action(
+						wezterm.action.SwitchToWorkspace({
+							name = id,
+						}),
+						inner_pane
+					)
+					-- session_manager.restore_state(inner_window)
+				end
 			end),
 		}),
 		window:active_pane()
