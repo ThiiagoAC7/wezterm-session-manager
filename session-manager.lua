@@ -427,10 +427,97 @@ function session_manager.rename_state(window)
 	)
 end
 
-function session_manager.delete_state()
-	-- TODO:
-	-- open list of current saved workspaces and pick one to delete
-	-- add param to as if user is sure
+--- Deletes a saved workspace
+-- @param window: The current window object
+function session_manager.delete_state(window)
+	local saved_workspaces = session_manager.get_saved_workspaces()
+	if #saved_workspaces == 0 then
+		window:toast_notification("WezTerm Session Manager", "No workspaces to delete", nil, 4000)
+		return
+	end
+
+	local workspaces_choices = {}
+	for i, workspace_name in ipairs(saved_workspaces) do
+		table.insert(workspaces_choices, {
+			id = workspace_name,
+			label = wezterm.format({
+				{ Foreground = { AnsiColor = "Red" } },
+				{ Text = string.format("%d. 󰆴 ", i) },
+				{ Foreground = { AnsiColor = "White" } },
+				{ Text = workspace_name },
+			}),
+		})
+	end
+
+	local confirmation_choices = {
+		{
+			id = "confirm",
+			label = wezterm.format({
+				{ Attribute = { Intensity = "Bold" } },
+				{ Foreground = { AnsiColor = "Red" } },
+				{ Text = "Yes" },
+			}),
+		},
+		{
+			id = "cancel",
+			label = wezterm.format({
+				{ Attribute = { Intensity = "Bold" } },
+				{ Foreground = { AnsiColor = "Green" } },
+				{ Text = "No" },
+			}),
+		},
+	}
+
+	window:perform_action(
+		wezterm.action.InputSelector({
+			title = "Delete Workspace",
+			choices = workspaces_choices,
+			fuzzy = true,
+			fuzzy_description = "Select a workspace to delete:",
+			action = wezterm.action_callback(function(inner_window, inner_pane, id, label)
+				if not id and not label then
+					return
+				end
+
+				local workspace_name = id
+
+				inner_window:perform_action(
+					wezterm.action.InputSelector({
+						title = "Confirm Deletion",
+						choices = confirmation_choices,
+						description = "Are you sure you want to delete workspace '" .. workspace_name .. "'? ",
+						action = wezterm.action_callback(function(w, p, confirm_id, _)
+							if confirm_id == "confirm" then
+								local workspace_dir = wezterm.home_dir
+									.. "/.config/wezterm/wezterm-session-manager/workspaces/"
+								local file_path = workspace_dir .. "wezterm_state_" .. workspace_name .. ".json"
+								local success, err = os.remove(file_path)
+								if success then
+									w:toast_notification(
+										"WezTerm Session Manager",
+										"Workspace deleted: " .. workspace_name,
+										nil,
+										4000
+									)
+								else
+									w:toast_notification(
+										"WezTerm Session Manager",
+										"Failed to delete: " .. tostring(err),
+										nil,
+										4000
+									)
+								end
+							else
+								w:toast_notification("WezTerm Session Manager", "Deletion cancelled", nil, 4000)
+							end
+						end),
+					}),
+					inner_pane
+				)
+			end),
+		}),
+		window:active_pane()
+	)
 end
 
 return session_manager
