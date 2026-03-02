@@ -4,9 +4,17 @@ local target_os = wezterm.target_triple
 
 --- Displays a notification in WezTerm.
 -- @param message string: The notification message to be displayed.
-local function display_notification(message)
-	wezterm.log_info(message)
-	-- Additional code to display a GUI notification can be added here if needed
+local function display_notification(title, message)
+	wezterm.run_child_process({
+		"notify-send",
+		"-u",
+		"normal",
+		"-t",
+		"500",
+		"--hint=int:transient:1", -- tells GNOME not to save this in the tray history
+		title,
+		message,
+	})
 end
 
 --- Returns a list of all saved workspace names
@@ -231,24 +239,14 @@ function session_manager.restore_state(window)
 
 	local workspace_data = load_from_json_file(file_path)
 	if not workspace_data then
-		window:toast_notification(
-			"WezTerm",
-			"Workspace state file not found for workspace: " .. workspace_name,
-			nil,
-			4000
-		)
+		display_notification("WezTerm", "Workspace state file not found for workspace: " .. workspace_name)
 		return
 	end
 
 	if recreate_workspace(window, workspace_data) then
-		window:toast_notification("WezTerm", "Workspace state loaded for workspace: " .. workspace_name, nil, 4000)
+		display_notification("WezTerm", "Workspace state loaded for workspace: " .. workspace_name)
 	else
-		window:toast_notification(
-			"WezTerm",
-			"Workspace state loading failed for workspace: " .. workspace_name,
-			nil,
-			4000
-		)
+		display_notification("WezTerm", "Workspace state loading failed for workspace: " .. workspace_name)
 	end
 end
 
@@ -268,6 +266,7 @@ local function _show_create_new_workspace_prompt(window, pane)
 						}),
 						pne
 					)
+					-- session_manager.save_state(win)
 				end
 			end),
 		}),
@@ -297,7 +296,7 @@ function session_manager.load_state(window)
 			label = wezterm.format({
 				{ Foreground = { AnsiColor = "White" } }, -- icon color
 				-- workspace icon (any nerd font works: https://www.nerdfonts.com/cheat-sheet)
-				{ Text = string.format("%d.  󰻃 ", i) },
+				{ Text = string.format("%d. 󰻃   ", i) },
 				{ Foreground = { AnsiColor = "White" } }, -- text color
 				{ Text = workspace_name },
 			}),
@@ -310,7 +309,7 @@ function session_manager.load_state(window)
 			title = "Load Workspace",
 			choices = choices,
 			fuzzy = true,
-			fuzzy_description = "Select a workspace to switch to (fuzzy):",
+			fuzzy_description = "Select a workspace to switch to (fuzzy): ",
 			action = wezterm.action_callback(function(inner_window, inner_pane, id, label)
 				if not id and not label then
 					wezterm.log_info("cancelled")
@@ -348,9 +347,9 @@ function session_manager.save_state(window)
 	local file_path = workspace_dir .. "wezterm_state_" .. data.name .. ".json"
 
 	if save_to_json_file(data, file_path) then
-		window:toast_notification("WezTerm Session Manager", "Workspace state saved successfully", nil, 4000)
+		display_notification("WezTerm Session Manager", "Workspace state saved successfully")
 	else
-		window:toast_notification("WezTerm Session Manager", "Failed to save workspace state", nil, 4000)
+		display_notification("WezTerm Session Manager", "Failed to save workspace state")
 	end
 end
 
@@ -363,12 +362,7 @@ function session_manager.rename_state(window)
 	-- Check if the state file for the current workspace exists
 	local file = io.open(old_path, "r")
 	if not file then
-		window:toast_notification(
-			"WezTerm Session Manager",
-			"No saved state for current workspace '" .. old_name .. "'.",
-			nil,
-			4000
-		)
+		display_notification("WezTerm Session Manager", "No saved state for current workspace '" .. old_name .. "'.")
 		return
 	end
 	file:close()
@@ -379,7 +373,7 @@ function session_manager.rename_state(window)
 			description = "Enter new name for workspace '" .. old_name .. "':",
 			action = wezterm.action_callback(function(win, pane, new_name)
 				if not new_name or new_name == "" then
-					win:toast_notification("WezTerm Session Manager", "Rename cancelled.", nil, 3000)
+					display_notification("WezTerm Session Manager", "Rename cancelled.")
 					return
 				end
 
@@ -393,11 +387,9 @@ function session_manager.rename_state(window)
 				local existing_file = io.open(new_path, "r")
 				if existing_file then
 					existing_file:close()
-					win:toast_notification(
+					display_notification(
 						"WezTerm Session Manager",
-						"A workspace named '" .. new_name .. "' already exists.",
-						nil,
-						4000
+						"A workspace named '" .. new_name .. "' already exists."
 					)
 					return
 				end
@@ -405,21 +397,14 @@ function session_manager.rename_state(window)
 				-- rename the file
 				local success, err = os.rename(old_path, new_path)
 				if success then
-					win:toast_notification(
+					display_notification(
 						"WezTerm Session Manager",
-						"Workspace '" .. old_name .. "' renamed to '" .. new_name .. "'.",
-						nil,
-						4000
+						"Workspace '" .. old_name .. "' renamed to '" .. new_name .. "'."
 					)
 					-- Switch to a workspace with the new name for better UX
 					win:perform_action(wezterm.action.SwitchToWorkspace({ name = new_name }), pane)
 				else
-					win:toast_notification(
-						"WezTerm Session Manager",
-						"Error renaming workspace: " .. tostring(err),
-						nil,
-						4000
-					)
+					display_notification("WezTerm Session Manager", "Error renaming workspace: " .. tostring(err))
 				end
 			end),
 		}),
@@ -432,7 +417,7 @@ end
 function session_manager.delete_state(window)
 	local saved_workspaces = session_manager.get_saved_workspaces()
 	if #saved_workspaces == 0 then
-		window:toast_notification("WezTerm Session Manager", "No workspaces to delete", nil, 4000)
+		display_notification("WezTerm Session Manager", "No workspaces to delete")
 		return
 	end
 
@@ -493,22 +478,18 @@ function session_manager.delete_state(window)
 								local file_path = workspace_dir .. "wezterm_state_" .. workspace_name .. ".json"
 								local success, err = os.remove(file_path)
 								if success then
-									w:toast_notification(
+									display_notification(
 										"WezTerm Session Manager",
-										"Workspace deleted: " .. workspace_name,
-										nil,
-										4000
+										"Workspace deleted: " .. workspace_name
 									)
 								else
-									w:toast_notification(
+									display_notification(
 										"WezTerm Session Manager",
-										"Failed to delete: " .. tostring(err),
-										nil,
-										4000
+										"Failed to delete: " .. tostring(err)
 									)
 								end
 							else
-								w:toast_notification("WezTerm Session Manager", "Deletion cancelled", nil, 4000)
+								display_notification("WezTerm Session Manager", "Deletion cancelled")
 							end
 						end),
 					}),
