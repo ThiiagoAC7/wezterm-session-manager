@@ -1,6 +1,7 @@
 local wezterm = require("wezterm")
 local session_manager = {}
 local target_os = wezterm.target_triple
+local WORKSPACE_DIR = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
 
 --- Displays a notification in WezTerm.
 -- @param message string: The notification message to be displayed.
@@ -21,7 +22,7 @@ end
 -- @return table: Array of workspace names found in the workspaces directory
 function session_manager.get_saved_workspaces()
 	local workspaces = {}
-	local session_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+	local session_dir = WORKSPACE_DIR
 
 	-- create directory if it doesnt exist
 	os.execute('mkdir -p "' .. session_dir .. '"')
@@ -232,10 +233,7 @@ end
 --- Loads the saved json file matching the current workspace.
 function session_manager.restore_state(window)
 	local workspace_name = window:active_workspace()
-	local file_path = wezterm.home_dir
-		.. "/.config/wezterm/wezterm-session-manager/workspaces/wezterm_state_"
-		.. workspace_name
-		.. ".json"
+	local file_path = WORKSPACE_DIR .. "wezterm_state_" .. workspace_name .. ".json"
 
 	local workspace_data = load_from_json_file(file_path)
 	if not workspace_data then
@@ -272,6 +270,23 @@ local function _show_create_new_workspace_prompt(window, pane)
 		}),
 		pane
 	)
+end
+
+--- Quits the current workspace by closing all its tabs.
+-- @param window: The current window object
+function session_manager.quit_state(window)
+	local workspace_name = window:active_workspace()
+	wezterm.log_info("quitting workspace: " .. workspace_name)
+
+	local mux_window = window:mux_window()
+	if not mux_window then
+		return
+	end
+
+	local tabs = mux_window:tabs()
+	for i = #tabs, 1, -1 do
+		window:perform_action(wezterm.action.CloseCurrentTab({ confirm = true }), tabs[i]:active_pane())
+	end
 end
 
 --- Allows to select which workspace to load
@@ -341,7 +356,7 @@ end
 function session_manager.save_state(window)
 	local data = retrieve_workspace_data(window)
 
-	local workspace_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+	local workspace_dir = WORKSPACE_DIR
 	-- create the workspaces directory if it doesnt exist
 	os.execute('mkdir -p "' .. workspace_dir .. '"')
 	local file_path = workspace_dir .. "wezterm_state_" .. data.name .. ".json"
@@ -356,7 +371,7 @@ end
 --- Renames the current workspace state
 function session_manager.rename_state(window)
 	local old_name = window:active_workspace()
-	local workspace_dir = wezterm.home_dir .. "/.config/wezterm/wezterm-session-manager/workspaces/"
+	local workspace_dir = WORKSPACE_DIR
 	local old_path = workspace_dir .. "wezterm_state_" .. old_name .. ".json"
 
 	-- Check if the state file for the current workspace exists
@@ -473,8 +488,7 @@ function session_manager.delete_state(window)
 						description = "Are you sure you want to delete workspace '" .. workspace_name .. "'? ",
 						action = wezterm.action_callback(function(w, p, confirm_id, _)
 							if confirm_id == "confirm" then
-								local workspace_dir = wezterm.home_dir
-									.. "/.config/wezterm/wezterm-session-manager/workspaces/"
+								local workspace_dir = WORKSPACE_DIR
 								local file_path = workspace_dir .. "wezterm_state_" .. workspace_name .. ".json"
 								local success, err = os.remove(file_path)
 								if success then
@@ -499,6 +513,21 @@ function session_manager.delete_state(window)
 		}),
 		window:active_pane()
 	)
+end
+
+--- Switches to a workspace by its index in the list of active workspaces.
+-- @param window: The current window object
+-- @param index: The index of the workspace to switch to
+function session_manager.switch_workspace_by_index(window, index)
+	local workspaces = wezterm.mux.get_workspace_names()
+	if workspaces[index] then
+		window:perform_action(
+			wezterm.action.SwitchToWorkspace({
+				name = workspaces[index],
+			}),
+			window:active_pane()
+		)
+	end
 end
 
 return session_manager
